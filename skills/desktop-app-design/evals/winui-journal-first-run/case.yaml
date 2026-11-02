@@ -1,0 +1,10 @@
+schema_version: "1.1"
+name: winui-journal-first-run
+expected_outcome: |
+  XAML and C# for a WinUI 3 main window plus a plain-language explanation. The design starts from an
+  explicit intent (calm, personal, and what to avoid) that drives type, color, motion and copy; uses
+  Mica and an extended title bar that keeps the system caption buttons; NavigationView with Settings at
+  the bottom; ThemeResource brushes and type-ramp styles; a first run that opens into the real layout
+  with a useful empty state rather than a tutorial carousel; one signature moment; platform motion
+  timings that respect the Animation effects setting; autosave with an honest, quiet saved state;
+  keyboard accelerators and accessible names; and no manipulative patterns.

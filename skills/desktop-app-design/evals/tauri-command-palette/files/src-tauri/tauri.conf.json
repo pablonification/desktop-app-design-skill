@@ -1,0 +1,7 @@
+{
+  "productName": "Ledgerly",
+  "identifier": "com.ledgerly.app",
+  "app": {
+    "windows": [{ "title": "Ledgerly", "width": 1200, "height": 780, "minWidth": 720, "minHeight": 480, "decorations": true }]
+  }
+}

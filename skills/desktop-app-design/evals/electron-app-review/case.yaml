@@ -1,0 +1,13 @@
+schema_version: "1.1"
+name: electron-app-review
+expected_outcome: |
+  A review ordered by severity that explains the real problems in plain language, then fixed files.
+  Window: frame:false with hand-drawn caption buttons (breaks traffic lights, Snap Layouts, double-click),
+  menu removed, white flash on launch, quits on macOS when the last window closes, Ctrl-only shortcut.
+  Accessibility: focus outline removed everywhere, #9b9b9b text on white (2.77:1), hover-only row actions,
+  no reduced-motion handling. Behavior: window.confirm before delete instead of undo, errors in toasts.
+  Generic look: purple gradient hero with gradient text, "Welcome back, John Doe 👋", emoji nav icons,
+  sparkle "Ask AI" button, card soup with transition: all and staggered 600 ms fade-ups.
+  Fixes keep the app's behavior and replace the generic look with specific, intentional choices.
+context:
+  scaffold_script: place-files.sh

@@ -1,0 +1,11 @@
+schema_version: "1.1"
+name: tauri-command-palette
+expected_outcome: |
+  A CommandPalette.tsx wired into App.tsx, with no new dependencies, that opens with ⌘K on macOS and
+  Ctrl+K elsewhere; appears instantly or with a very short fade/scale; is fully keyboard-driven (arrows,
+  Enter, Esc, focus returned); is accessible (combobox/listbox/option roles, aria-activedescendant,
+  live result count); filters across titles and keywords with recents first; shows each command's
+  shortcut formatted per platform; has a helpful no-results state; respects reduced motion; animates only
+  transform/opacity; uses the existing CSS tokens; and includes -webkit- prefixes needed by WebKit webviews.
+context:
+  scaffold_script: place-files.sh

@@ -1,0 +1,9 @@
+schema_version: "1.1"
+name: swiftui-mac-notes-app
+expected_outcome: |
+  A single SwiftUI file for a Mac notes app that feels like a real Mac app: a three-column
+  NavigationSplitView, a Settings scene (⌘, comes for free) instead of a gear button, menu commands with
+  standard shortcuts (New Note ⌘N) and no repurposed standard shortcuts, search in the toolbar via
+  .searchable, undo or a Trash instead of "Are you sure?" alerts, empty states, semantic colors and text
+  styles, keyboard support for list selection and delete, restored selection, native window chrome,
+  labeled toolbar buttons, and a short plain-language explanation of the design choices.
