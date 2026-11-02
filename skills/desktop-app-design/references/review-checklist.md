@@ -8,10 +8,10 @@ Use this to audit an app, window, flow, screenshot or PR, or to check your own w
 - **Minor**: friction or inconsistency.
 - **Polish**: craft details.
 
-Report in the format in SKILL.md §9, most important first.
+Report in the format in SKILL.md §9, most important first. For a full audit, fix, polish or redesign of an existing app, follow the process in `audit-and-fix.md` and use this list for its passes.
 
 ## 0. Before you start
-- [ ] Run `python3 scripts/ui_audit.py <app>` and open every hit to confirm it. Pattern matches can be wrong, and the audit can't see layout, copy or flow problems.
+- [ ] Run `python3 scripts/ui_audit.py <app> --save /tmp/before.json` (and `tokens.py <app>` for the token picture), and open every hit to confirm it. Pattern matches can be wrong, and the audit can't see layout, copy or flow problems.
 - [ ] Note the context in one line: who uses the app, how often (sovereign, transient or daemon), the top 3 tasks, which OSes it ships on. *(interaction §3, §5)*
 - [ ] If you can run it, capture screenshots in light and dark, at the minimum window size, with large text, and keyboard-only. Record the main transitions; a still screenshot hides jank.
 
@@ -140,7 +140,7 @@ Report in the format in SKILL.md §9, most important first.
 - [ ] "No" is as easy as "Yes"; cancel is as easy as subscribe; trial end dates shown with a reminder before charging. No confirmshaming, fake urgency, nagging, pre-checked upsells or disguised ads. *(emotional-design §10)*
 
 ## 11. Tools to run when you can
-- `python3 scripts/ui_audit.py <app>`, `python3 scripts/contrast.py --pairs FG:BG …`, `python3 scripts/spring.py …` to check spring timings.
+- `python3 scripts/ui_audit.py <app>` (`--compare /tmp/before.json` after fixing), `python3 scripts/tokens.py <app>`, `python3 scripts/contrast.py --pairs FG:BG …`, `python3 scripts/spring.py …` to check spring timings.
 - macOS: Accessibility Inspector audit, VoiceOver (⌘F5), Full Keyboard Access on, Increase Contrast and Reduce Transparency on.
 - Windows: Accessibility Insights for Windows, Narrator or NVDA, all 4 contrast themes, Text size 225%, Animation effects off.
 - Linux: Accerciser + Orca, High Contrast, Large Text, reduced motion, 100/125/150/200% scaling.

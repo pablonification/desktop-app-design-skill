@@ -2,7 +2,7 @@
 
 An [agent skill](https://docs.claude.com/en/docs/claude-code/skills) that helps AI coding agents (Claude Code and others that support `SKILL.md`) design and build **desktop apps for macOS, Windows and Linux that feel native, intentional and polished**, not like every other AI-generated app.
 
-It turns platform guidelines, usability research, emotional-design research and respected craft into rules and tools. An agent applies them while writing SwiftUI, AppKit, WinUI, GTK/libadwaita, Qt, Electron, Tauri or Flutter code, or while reviewing an existing app.
+It turns platform guidelines, usability research, emotional-design research and respected craft into rules and tools. An agent applies them while writing SwiftUI, AppKit, WinUI, GTK/libadwaita, Qt, Electron, Tauri or Flutter code, or while auditing, fixing, polishing or redesigning an app that already exists.
 
 Current as of **November 2026**:
 - macOS 26 Tahoe and macOS 27
@@ -19,6 +19,13 @@ Current as of **November 2026**:
 - **Microinteractions and motion with real numbers.** It covers when *not* to animate, desktop durations and easing, and springs that can be interrupted. Reduced motion is handled properly, and there's a catalog of hover, press, drag, undo and loading details.
 - **Avoiding the generic AI look.** A table of 25 "slop tells" with what to do instead, plus a pixel-level polish checklist.
 - **Trust and accessibility.** Honest saved and sync states, undo instead of "Are you sure?", no dark patterns, full keyboard access, screen readers, contrast, and respect for OS settings.
+- **Auditing and fixing existing apps.** The agent first says which of four modes it's in, and stays inside it:
+  - **Audit:** a report only, no code changes.
+  - **Fix:** defects only, same look.
+  - **Polish:** a consistent system and details.
+  - **Redesign:** one key screen first, then the rest after you approve.
+
+  Every finding needs a rule, proof and one concrete fix. Findings are grouped by root cause and fixed in batches without changing how the app works. The result is measured before and after.
 
 ## What the agent gets
 
@@ -34,8 +41,10 @@ Current as of **November 2026**:
 | `references/windows.md` | Windows 11 / Fluent 2 / WinUI 3: Mica, title bars and Snap Layouts, type ramp, navigation, dialogs, motion tokens |
 | `references/linux.md` | GNOME/libadwaita, KDE/Kirigami, elementary, freedesktop portals, Flathub quality rules |
 | `references/cross-platform.md` | Per-OS differences (shortcuts, dialog button order, wording, lifecycle) and Electron, Tauri, Flutter, Qt, Compose, Avalonia, Wails |
+| `references/audit-and-fix.md` | The process for existing apps: modes, inventory, audit passes, evidence rules, root causes, a scorecard, fix recipes per platform, and report formats |
 | `references/review-checklist.md` | A checklist for auditing an app or checking your own work |
-| `scripts/ui_audit.py` | Finds generic-UI tells, "website in a window" mistakes, accessibility gaps and design-token sprawl in your code |
+| `scripts/ui_audit.py` | Finds generic-UI tells, "website in a window" mistakes, accessibility gaps and design-token sprawl in your code; saves a baseline and compares before and after a fix |
+| `scripts/tokens.py` | Gathers the colors, spacing, font sizes, corners and animation speeds an app already uses, merges near-duplicates into a token set, and can rewrite the stylesheets to use it |
 | `scripts/spring.py` | One spring, converted for SwiftUI, CSS `linear()`, Motion, libadwaita, Flutter and Compose |
 | `scripts/contrast.py` | WCAG contrast checker that handles translucent colors and suggests the nearest passing color |
 
@@ -65,6 +74,8 @@ Once installed, you don't need to call it. The agent picks it up for desktop UI 
 - "Add a command palette to my Tauri app and make it feel like Raycast"
 - "Design the first-run experience for my WinUI journaling app. It should feel calm and personal"
 - "Review this app for usability and accessibility"
+- "Audit my Mac app, but don't change any code yet"
+- "My styles grew messy. Clean them up into a consistent system without changing the look"
 
 The tools also work on their own (Python 3, no dependencies):
 
@@ -78,6 +89,20 @@ python3 skills/desktop-app-design/scripts/ui_audit.py path/to/your/app
 #   …
 # DESIGN TOKENS (distinct values used directly; fewer = more consistent)
 #   off-grid spacing    7  14px 10px 22px 18px 42px 30px 6px  <- not on a 4px grid
+
+python3 skills/desktop-app-design/scripts/ui_audit.py path/to/your/app --save /tmp/before.json
+# …fix things, then:
+python3 skills/desktop-app-design/scripts/ui_audit.py path/to/your/app --compare /tmp/before.json
+# UI audit comparison: 9 findings before -> 0 after
+#   color literals     37 ->   0
+#   off-grid spacing   14 ->   0
+
+python3 skills/desktop-app-design/scripts/tokens.py path/to/your/app
+# COLORS: 37 distinct literals -> 20 tokens (near-duplicates merged)
+#   --color-text-1   #222222   <- #222222 ×1, #252525 ×1, #1f1f1f ×1   15.24:1 on #fafafa
+#   --color-text-3   #9a9a9a   <- #9a9a9a ×1, #959595 ×1, #a0a0a0 ×1   2.69:1 on #fafafa  <- below 4.5:1
+# SPACING: 18 distinct -> 10 tokens (snapped to a 4 px grid)
+# then: --write src/tokens.css --diff   (preview), --apply   (rewrite the stylesheets)
 
 python3 skills/desktop-app-design/scripts/spring.py --duration 0.35 --bounce 0.15
 # Spring: duration 0.350 s, bounce 0.15  (damping ratio 0.85)
@@ -93,11 +118,13 @@ python3 skills/desktop-app-design/scripts/contrast.py "#9b9b9b" "#ffffff" --fix
 
 ## Tests
 
-`skills/desktop-app-design/evals/` holds four test cases, each with pass/fail checks in the layout read by `claude plugin eval`:
+`skills/desktop-app-design/evals/` holds six test cases, each with pass/fail checks in the layout read by `claude plugin eval`:
 - reviewing a flawed Electron app
 - building a Mac notes app in SwiftUI
 - a polished command palette in Tauri
 - a WinUI journaling app designed from a stated feeling
+- auditing a flawed Mac app without touching the code
+- cleaning up messy styles into a token system while keeping the look
 
 Two of the cases were run with and without the skill, and graded blind:
 
@@ -111,6 +138,13 @@ Without the skill, the agent:
 - removed the menu on Windows, losing the zoom shortcuts;
 - didn't rank its findings by importance;
 - left the command palette without recent commands or a helpful no-results state.
+
+The two audit-and-fix cases were run with the skill only, and the results were checked directly:
+
+| Case | With skill |
+|---|---|
+| Audit a flawed Mac app, no code changes | 11/11 (file left untouched; every planted problem found, plus a dead Share button and no saving) |
+| Clean up messy styles, keep the look | 9/9 (37 colors → 15 named by role; audit findings 9 → 0; no new dependencies; every visible change listed) |
 
 This is one run per case, so treat it as a sign of direction, not a benchmark.
 

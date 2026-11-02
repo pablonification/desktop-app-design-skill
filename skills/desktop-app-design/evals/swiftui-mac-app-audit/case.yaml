@@ -1,0 +1,13 @@
+schema_version: "1.1"
+name: swiftui-mac-app-audit
+expected_outcome: |
+  An audit only (no file changes) that states its scope, ranks findings by severity with locations and
+  one concrete fix each, groups them into root causes or batches, says what's already good, and ends
+  with a top-3 plan and an offer to fix. It should catch: hidden title bar with a hand-drawn close button
+  and a fixed, non-resizable window; settings as a toolbar gear + sheet with OK/Cancel instead of a
+  Settings scene; ⌘S repurposed for Share and no menu commands; an "Are you sure?" delete alert instead
+  of undo; rows selected with onTapGesture (no keyboard or VoiceOver path); low-contrast gray secondary
+  text, hard-coded colors and fixed font sizes; a slow bouncy spring on a frequent action; an in-app dark
+  mode toggle overriding the system; a bare "No items" empty state; search at the bottom; emoji in the title.
+context:
+  scaffold_script: place-files.sh

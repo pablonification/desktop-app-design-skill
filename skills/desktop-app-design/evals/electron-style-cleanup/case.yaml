@@ -1,0 +1,11 @@
+schema_version: "1.1"
+name: electron-style-cleanup
+expected_outcome: |
+  A polish pass that keeps behavior and the overall look: one token file (colors by role, a 4 px spacing
+  scale, radius scale, type scale, durations), literals in both stylesheets and the inline styles replaced
+  with tokens, near-duplicate grays merged into a few named roles, failing grays (#9a9a9a, #a3a3a3, #aaa,
+  #a8a8a8 etc. on white) raised to 4.5:1, dark-mode values or a clear plan for them, no new dependencies
+  and no markup/behavior changes, and a report of what changed with before → after counts and any visible
+  differences.
+context:
+  scaffold_script: place-files.sh

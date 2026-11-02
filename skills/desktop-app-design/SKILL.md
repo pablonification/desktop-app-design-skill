@@ -1,6 +1,6 @@
 ---
 name: desktop-app-design
-description: Design and build desktop apps for macOS, Windows and Linux that feel native, intentional and polished, not like generic AI slop. Distilled from Apple's HIG, Microsoft Fluent 2, the GNOME and KDE guidelines, WCAG 2.2, Nielsen Norman Group research, emotional-design and trust research, and respected motion and craft practitioners. Use it whenever the user designs, builds, reviews or polishes desktop UI — windows and title bars, sidebars, toolbars, menus and shortcuts, command palettes, settings, dashboards, tables, onboarding, empty/loading/error states, dark mode, animations and microinteractions, or a design system — in SwiftUI, AppKit, WinUI, WPF, GTK/libadwaita, Qt, Electron, Tauri, Flutter or other desktop stacks. Also use it when someone says their app looks like every other AI app, feels like a website, looks amateur or feels off, wants it to feel premium or polished, or asks for a UX, usability or accessibility review of a desktop app.
+description: Design, build, audit and fix desktop apps for macOS, Windows and Linux so they feel native, intentional and polished, not like generic AI slop. Distilled from Apple's HIG, Microsoft Fluent 2, the GNOME and KDE guidelines, WCAG 2.2, Nielsen Norman Group research, emotional-design and trust research, and respected motion and craft practitioners. Use it whenever the user designs, builds, reviews, audits, fixes, polishes or redesigns desktop UI — new or existing — including windows and title bars, sidebars, toolbars, menus and shortcuts, command palettes, settings, dashboards, tables, onboarding, empty/loading/error states, dark mode, animations and microinteractions, or a design system, in SwiftUI, AppKit, WinUI, WPF, GTK/libadwaita, Qt, Electron, Tauri, Flutter or other desktop stacks. Also use it when someone says their app looks like every other AI app, feels like a website, looks amateur or inconsistent, or feels off, or wants it cleaned up, made premium, or reviewed for UX or accessibility.
 ---
 
 # Desktop app design
@@ -44,7 +44,8 @@ All references are in `references/`. Each has a contents line at the top, so rea
 | Keyboard access, screen readers, contrast, OS display settings, compliance | `accessibility.md` |
 | Mac / Windows / Linux specifics | `macos.md`, `windows.md`, `linux.md` |
 | One codebase on several OSes; Electron, Tauri, Flutter, Qt, Compose, Avalonia, Wails | `cross-platform.md` |
-| Reviewing an app, screen, screenshot or PR, or checking your own work | `review-checklist.md` |
+| Auditing, fixing, polishing, cleaning up or redesigning an **existing** app | `audit-and-fix.md` (the process, fix recipes, report formats) + `review-checklist.md` |
+| Reviewing a screen, screenshot or PR, or checking your own work | `review-checklist.md` |
 
 Tools (in `scripts/`, Python 3, no dependencies):
 
@@ -52,6 +53,8 @@ Tools (in `scripts/`, Python 3, no dependencies):
 python3 scripts/ui_audit.py path/to/app      # generic-UI tells, web-in-a-window mistakes, a11y gaps, token sprawl
 python3 scripts/contrast.py "#9b9b9b" "#ffffff" --fix          # WCAG contrast + nearest passing color
 python3 scripts/spring.py --duration 0.3 --bounce 0.1          # one spring for SwiftUI, CSS linear(), Motion, libadwaita, Flutter, Compose
+python3 scripts/tokens.py path/to/app --write tokens.css --diff # existing app: cluster its colors/spacing/type into a token set, preview replacements
+python3 scripts/ui_audit.py path/to/app --save /tmp/before.json # then after fixing: --compare /tmp/before.json
 ```
 
 `ui_audit.py` scans web-stack UI code (CSS, TSX/JSX, Vue, Svelte), Electron main-process code, `tauri.conf.json`, SwiftUI and XAML. Treat its hits as leads: open each location and confirm before changing anything.
@@ -239,26 +242,61 @@ The full 25-row table is in `visual-craft.md` §7, and the pixel-level checklist
   - GTK/libadwaita handle it for you.
 - **Comment non-obvious design decisions** (why 167 ms, why this button order) so later edits don't undo them.
 
-## 9. Reviewing an existing app
+## 9. Auditing, revising and fixing an existing app
 
-1. Run `scripts/ui_audit.py` on the code and confirm each hit by opening the file.
-2. Walk `review-checklist.md`. Look at the running app or screenshots if you can.
-3. Report findings **most important first**, grouped by severity:
-   - **Blocker**: loses data, blocks a task, or excludes people (keyboard, screen-reader or low-vision users).
-   - **Major**: breaks a platform convention people rely on, or a usability problem most people will hit.
-   - **Minor**: friction or inconsistency.
-   - **Polish**: craft details.
+Follow `references/audit-and-fix.md`. The short version:
 
-   For each finding, give:
-   - **Where:** window › panel › control, and file:line.
-   - **Problem:** what's wrong, in plain words.
-   - **Why it matters:** the guideline, heuristic or research behind it (e.g. Nielsen #5, WCAG 1.4.3, macOS HIG Settings).
-   - **Fix:** one concrete change.
-4. End with what's already good (so it's kept) and the top 3 things to fix first.
+1. **Name the mode** in the first line of your reply, and stay inside it:
 
-Write the review for the person who asked, not for designers. Use plain words, and explain any term the first time ("caption buttons, the minimize/maximize/close buttons"). Keep it skimmable: one line per finding where possible.
+   | Mode | When the user says | You deliver |
+   |---|---|---|
+   | **Audit** | "review", "audit", "what's wrong" | A report, a scorecard and a plan. No file changes |
+   | **Fix** | "fix it", "make it accessible", "it feels off" | Defects fixed in severity order; same features, same identity |
+   | **Polish** | "make it look better / less generic / consistent" | Fix + a token system, every state, purposeful motion, generic tells removed |
+   | **Redesign** | "redesign", "new look" | Intent brief → one key screen → approval → rollout through tokens |
 
-When asked to *fix* rather than review, fix in severity order, keep behavior the same unless asked, then re-run the audit and say what changed.
+   If it's ambiguous, do the smallest mode that answers it and offer the next ("Want me to fix batch 1?").
+2. **Understand before judging.**
+   - Read the project and the theme.
+   - Run `ui_audit.py --save /tmp/before.json` (outside the project) and `tokens.py`.
+   - List the windows and the top 3 tasks.
+   - Get screenshots if you can run the app (light/dark, minimum size, keyboard-only).
+3. **Audit in separate passes**: platform fit · usability (walk through each top task, then Nielsen's 10) · accessibility · states and trust · visual craft · motion · intent and feel. Each finding needs:
+   - a **rule** it breaks;
+   - **proof** that it reaches the user (file:line on the real render path, a screenshot, a measured value);
+   - **one fix**.
+
+   Try to disprove each finding before keeping it.
+4. **Find root causes and prioritize.** No token system, no command model, custom-drawn controls, web defaults, no state design or no motion system usually explain most findings. Fix causes, not symptoms. Pick a top 3, and rate each area 0–4 before and after.
+5. **Fix in batches**, re-running the tools after each:
+   1. safety and access
+   2. platform behavior
+   3. the token system
+   4. states and feedback
+   5. motion
+   6. identity and polish
+
+   **Preserve behavior.** List every intentional behavior change. Reuse existing components; add no dependencies without asking.
+6. **Verify and report.**
+   - Run `ui_audit.py --compare /tmp/before.json`, build or type-check, a keyboard-only run of the top task, and before/after screenshots.
+   - Report what changed and why, behavior changes, and what still needs a human check.
+
+**Severity:**
+- **Blocker**: loses data, blocks a top task, or excludes keyboard, screen-reader or low-vision users.
+- **Major**: most people hit it, or it breaks a platform convention people rely on.
+- **Minor**: friction or inconsistency.
+- **Polish**: craft details.
+
+For each finding give:
+- **Where:** window › panel › control, file:line.
+- **Problem:** in plain words.
+- **Why it matters:** the rule, e.g. Nielsen #5, WCAG 1.4.3, macOS HIG Settings.
+- **Fix:** one concrete change.
+- **Effort:** S/M/L.
+
+End with what's already good (so nobody "fixes" it) and the top 3 to do first.
+
+Write for the person who asked, not for designers. Use plain words, and explain any term the first time ("caption buttons, the minimize/maximize/close buttons"). Keep it skimmable: one line per finding where possible.
 
 ## 10. Explaining design to the user
 

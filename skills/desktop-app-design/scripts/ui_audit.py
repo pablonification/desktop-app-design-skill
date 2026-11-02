@@ -7,6 +7,8 @@ Usage:
   ui_audit.py src/ --max-per-rule 10 show more locations per rule (default 5)
   ui_audit.py . --json               machine-readable output
   ui_audit.py . --no-tokens          skip the design-token report
+  ui_audit.py . --save before.json   also save results, to compare after fixing
+  ui_audit.py . --compare before.json   show what was fixed, what's new, and token counts before -> after
 
 Scans web-stack UI (CSS/SCSS/Less, TSX/JSX/TS/JS, Vue, Svelte, HTML, Astro),
 Electron main-process code, tauri.conf.json, SwiftUI (.swift) and WinUI/WPF (.xaml).
@@ -127,6 +129,24 @@ RULES = {
     "swift-no-reduce-motion": ("Minor", "SwiftUI animations but no Reduce Motion check",
         "Read @Environment(\\.accessibilityReduceMotion) and swap movement for fades.",
         "motion.md §8"),
+    "swift-shortcut-conflict": ("Major", "Standard Mac shortcut used for something else",
+        "People expect ⌘S Save, ⌘N New, ⌘W Close, ⌘F Find, ⌘, Settings… Keep the standard meaning; pick a free shortcut and put it in a menu.",
+        "macos.md §3"),
+    "swift-settings-sheet": ("Minor", "Settings shown in a sheet or window instead of a Settings scene",
+        "Add a Settings { } scene (⌘, in the app menu). Changes apply immediately: no OK/Cancel.",
+        "macos.md §5"),
+    "swift-appearance-override": ("Minor", "App overrides the system light/dark setting",
+        "Follow the system appearance. If you offer a choice, put it in Settings as System / Light / Dark, with System as the default.",
+        "macos.md §7"),
+    "swift-fixed-window": ("Minor", "Main window has a fixed size",
+        "Let it resize: use minWidth/minHeight (and ideal sizes) instead of a fixed frame, and lay out for small and large windows.",
+        "macos.md §2"),
+    "swift-low-contrast-gray": ("Minor", "Fixed gray text that fails contrast and ignores dark mode",
+        "Use .secondary / .tertiary (they adapt to light, dark and Increase Contrast).",
+        "accessibility.md §6, macos.md §7"),
+    "are-you-sure": ("Minor", "\"Are you sure?\" confirmation",
+        "For reversible actions, act at once and offer Undo. If you must confirm, say what happens and name the button for the action (Delete), not Yes/OK.",
+        "interaction.md §4, macos.md §6"),
     "xaml-fixed-font": ("Minor", "Fixed FontSize in XAML",
         "Use the type ramp styles (BodyTextBlockStyle, SubtitleTextBlockStyle…) so text scaling and consistency work.",
         "windows.md §3"),
@@ -160,6 +180,15 @@ RULES = {
 }
 
 EMOJI_RE = re.compile("[\U0001F300-\U0001FAFF\U00002700-\U000027BF\U00002600-\U000026FF\U0001F000-\U0001F2FF]")
+# ⌘-key -> (meaning, words expected near the shortcut if it is used for that meaning)
+MAC_SHORTCUTS = {
+    "s": ("Save", ("save",)), "n": ("New", ("new", "add", "create")), "o": ("Open", ("open", "import")),
+    "w": ("Close", ("close",)), "q": ("Quit", ("quit", "terminate")), "z": ("Undo", ("undo",)),
+    "f": ("Find", ("find", "search")), "p": ("Print", ("print",)), ",": ("Settings", ("setting", "preference")),
+    "c": ("Copy", ("copy",)), "v": ("Paste", ("paste",)), "x": ("Cut", ("cut",)), "a": ("Select All", ("select",)),
+    "h": ("Hide", ("hide",)), "m": ("Minimize", ("minimi",)),
+}
+
 HEX_RE = r"#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\b"
 COLOR_LIT_RE = re.compile(HEX_RE + r"|rgba?\([^)]*\)|hsla?\([^)]*\)|oklch\([^)]*\)|oklab\([^)]*\)")
 PURPLE_NAMES = {"purple", "violet", "indigo", "fuchsia", "magenta", "blueviolet", "mediumpurple", "darkviolet", "rebeccapurple"}
@@ -178,18 +207,17 @@ class Audit:
         self.color_decls = []  # (path, line, color)
         self.stack = set()
         self.current_text = ""
+        self.vars = {}  # CSS custom property -> value, so var(--x) colors still get contrast-checked
 
     def add(self, rule, path, line, snippet):
         self.findings[rule].append((os.path.relpath(path, self.root), line, snippet.strip()[:120]))
 
     # ---------- walking ----------
-    def run(self):
-        self.detect_stack()
+    def walk(self):
         for dirpath, dirnames, filenames in os.walk(self.root):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")]
             for fn in filenames:
                 path = os.path.join(dirpath, fn)
-                ext = os.path.splitext(fn)[1].lower()
                 if ".min." in fn or fn.endswith(".d.ts"):
                     continue
                 try:
@@ -197,14 +225,38 @@ class Audit:
                         continue
                 except OSError:
                     continue
-                if ext in WEB_EXT:
-                    self.scan_web(path, ext)
-                elif ext == ".swift":
-                    self.scan_swift(path)
-                elif ext == ".xaml":
-                    self.scan_xaml(path)
-                elif fn in ("tauri.conf.json", "tauri.conf.json5", "Tauri.toml"):
-                    self.scan_tauri(path)
+                yield path, fn, os.path.splitext(fn)[1].lower()
+
+    def collect_vars(self, paths):
+        """First definition wins (light theme usually comes before dark overrides)."""
+        for path in paths:
+            if os.path.splitext(path)[1].lower() in STYLE_EXT | {".vue", ".svelte", ".html", ".astro"}:
+                clean = re.sub(r"/\*.*?\*/", "", self.read(path), flags=re.S)
+                for m in re.finditer(r"(--[\w-]+)\s*:\s*([^;{}]+)", clean):
+                    self.vars.setdefault(m.group(1), m.group(2).strip())
+
+    def resolve_vars(self, body):
+        for _ in range(5):  # tokens can point at other tokens
+            new = re.sub(r"var\(\s*(--[\w-]+)\s*(?:,\s*([^()]*))?\)",
+                         lambda m: self.vars.get(m.group(1), (m.group(2) or m.group(0)).strip()), body)
+            if new == body:
+                break
+            body = new
+        return body
+
+    def run(self):
+        self.detect_stack()
+        files = list(self.walk())
+        self.collect_vars(path for path, _, _ in files)
+        for path, fn, ext in files:
+            if ext in WEB_EXT:
+                self.scan_web(path, ext)
+            elif ext == ".swift":
+                self.scan_swift(path)
+            elif ext == ".xaml":
+                self.scan_xaml(path)
+            elif fn in ("tauri.conf.json", "tauri.conf.json5", "Tauri.toml"):
+                self.scan_tauri(path)
         self.project_checks()
 
     def detect_stack(self):
@@ -276,6 +328,8 @@ class Audit:
             self.css_blocks(path, text)
 
     def web_line(self, path, n, line, s, is_markup, is_style, ext):
+        if not is_style and re.search(r"are you sure", s, re.I) and not re.search(r"\bconfirm\(", s):
+            self.add("are-you-sure", path, n, s)
         if re.search(r"transition(-property)?\s*:\s*all\b|\btransition-all\b|transition:\s*['\"]all", s):
             self.add("transition-all", path, n, s)
         if re.search(r"outline\s*:\s*(none|0)\b|(?<![\w-])outline-none\b|outline:\s*['\"]none", s) \
@@ -352,7 +406,7 @@ class Audit:
     def css_blocks(self, path, text):
         clean = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
         for m in re.finditer(r"([^{}]+)\{([^{}]*)\}", clean):
-            selector, body = m.group(1).strip(), m.group(2)
+            selector, body = m.group(1).strip(), self.resolve_vars(m.group(2))
             line = clean.count("\n", 0, m.start(2)) + 1
             fg = re.search(r"(?<![\w-])color\s*:\s*(" + HEX_RE + r"|rgba?\([^)]*\))", body)
             bg = re.search(r"background(?:-color)?\s*:\s*(" + HEX_RE + r"|rgba?\([^)]*\))\s*(?:;|$|!)", body)
@@ -446,7 +500,10 @@ class Audit:
         self.files["swift"] += 1
         if "accessibilityReduceMotion" in text or "reduceMotion" in text:
             self.flags["swift_reduce"] += 1
-        for n, line in enumerate(text.splitlines(), 1):
+        lines = text.splitlines()
+        fixed_frame = re.search(r"\.frame\(\s*width:\s*\d+\s*,\s*height:\s*\d+\s*\)", text)
+        fixed_frame = fixed_frame.group(0) if fixed_frame else ""
+        for n, line in enumerate(lines, 1):
             s = line.strip()
             if s.startswith("//"):
                 continue
@@ -462,6 +519,29 @@ class Audit:
                 self.add("swift-hidden-titlebar", path, n, s)
             if EMOJI_RE.search(s) and '"' in s:
                 self.add("emoji-ui", path, n, s)
+            m = re.search(r'\.keyboardShortcut\(\s*"(.)"(?:\s*,\s*modifiers:\s*\.command)?\s*\)', s)
+            if m and m.group(1).lower() in MAC_SHORTCUTS:
+                expected = MAC_SHORTCUTS[m.group(1).lower()]
+                context = " ".join(lines[max(0, n - 5):n]).lower()
+                if not any(word in context for word in expected[1]):
+                    self.add("swift-shortcut-conflict", path, n, "%s  (⌘%s normally means %s)" % (s, m.group(1).upper(), expected[0]))
+            if re.search(r"\.preferredColorScheme\((?!\s*nil\b)", s) and "?" in s:
+                self.add("swift-appearance-override", path, n, s)
+            if ".windowResizability(.contentSize)" in s and fixed_frame:
+                self.add("swift-fixed-window", path, n, "%s  + %s" % (s, fixed_frame.strip()))
+            m = re.search(r"(?:foregroundColor|foregroundStyle)\(\s*(?:Color\(\s*white:\s*(0?\.\d+|1(?:\.0)?)\s*\)|(?:Color)?\.(gray|grey)\b)", s)
+            if m:
+                level = float(m.group(1)) if m.group(1) else 142 / 255
+                v = round(level * 255)
+                ratio = contrast_ratio((v, v, v), (255, 255, 255))
+                if ratio < 4.5:
+                    self.add("swift-low-contrast-gray", path, n, "%s  (%.2f:1 on white)" % (s, int(ratio * 100) / 100))
+            if re.search(r"are you sure", s, re.I):
+                self.add("are-you-sure", path, n, s)
+        if re.search(r"@main\s+struct\s+\w+\s*:\s*App\b", text) and not re.search(r"\bSettings\s*\{", text):
+            m = re.search(r"\.sheet\([^)]*[Ss]ettings|openWindow\(id:\s*\"[^\"]*settings", text)
+            if m:
+                self.add("swift-settings-sheet", path, text.count("\n", 0, m.start()) + 1, m.group(0))
 
     def scan_xaml(self, path):
         text = self.read(path)
@@ -476,6 +556,8 @@ class Audit:
                 self.add("xaml-fixed-font", path, n, s)
             if 'UseSystemFocusVisuals="False"' in s:
                 self.add("xaml-no-focus", path, n, s)
+            if re.search(r"are you sure", s, re.I):
+                self.add("are-you-sure", path, n, s)
 
     def scan_tauri(self, path):
         text = self.read(path)
@@ -575,12 +657,52 @@ class Audit:
         return out
 
 
+def print_compare(before, after):
+    def counts(res):
+        return {f["rule"]: (f["severity"], f["title"], len(f["locations"])) for f in res.get("findings", [])}
+    b, a = counts(before), counts(after)
+    order = {s: i for i, s in enumerate(SEVERITIES)}
+    rows = sorted(set(b) | set(a), key=lambda r: (order[(a.get(r) or b.get(r))[0]], r))
+    fixed = [r for r in rows if r in b and r not in a]
+    new = [r for r in rows if r in a and r not in b]
+    changed = [r for r in rows if r in a and r in b and a[r][2] != b[r][2]]
+    same = [r for r in rows if r in a and r in b and a[r][2] == b[r][2]]
+    total_b = sum(v[2] for v in b.values())
+    total_a = sum(v[2] for v in a.values())
+    print("UI audit comparison: %d findings before -> %d after\n" % (total_b, total_a))
+    for sev in SEVERITIES:
+        nb = sum(v[2] for v in b.values() if v[0] == sev)
+        na = sum(v[2] for v in a.values() if v[0] == sev)
+        if nb or na:
+            print("  %-8s %3d -> %3d" % (sev, nb, na))
+    print()
+    for title, rules, fmt in (("FIXED", fixed, lambda r: "%s x%d" % (b[r][1], b[r][2])),
+                              ("NEW (check these: a fix may have introduced them)", new, lambda r: "[%s] %s x%d" % (a[r][0], a[r][1], a[r][2])),
+                              ("CHANGED", changed, lambda r: "%s  %d -> %d" % (a[r][1], b[r][2], a[r][2])),
+                              ("UNCHANGED", same, lambda r: "[%s] %s x%d" % (a[r][0], a[r][1], a[r][2]))):
+        if rules:
+            print(title)
+            for r in rules:
+                print("  " + fmt(r))
+            print()
+    tb, ta = before.get("tokens", {}), after.get("tokens", {})
+    keys = [k for k in ("font sizes", "font weights", "font families", "radii", "shadows", "durations", "color literals", "off-grid spacing") if k in tb or k in ta]
+    if keys:
+        print("DESIGN TOKENS (distinct literal values; lower is more consistent)")
+        for k in keys:
+            print("  %-17s %3d -> %3d" % (k, tb.get(k, {}).get("distinct", 0), ta.get(k, {}).get("distinct", 0)))
+        print()
+    print("Pattern counts only: confirm visually, and re-run the keyboard and contrast checks.")
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("path", nargs="?", default=".", help="project folder or file to scan")
     p.add_argument("--max-per-rule", type=int, default=5, help="locations shown per rule (default 5)")
     p.add_argument("--json", action="store_true", help="JSON output")
     p.add_argument("--no-tokens", action="store_true", help="skip the design-token report")
+    p.add_argument("--save", metavar="FILE", help="save results as JSON for a later --compare")
+    p.add_argument("--compare", metavar="FILE", help="compare against results saved with --save")
     a = p.parse_args()
     root = os.path.abspath(a.path)
     if not os.path.exists(root):
@@ -588,6 +710,7 @@ def main():
     audit = Audit(root if os.path.isdir(root) else os.path.dirname(root), a.max_per_rule)
     if os.path.isfile(root):
         ext = os.path.splitext(root)[1].lower()
+        audit.collect_vars([root])
         if ext in WEB_EXT:
             audit.scan_web(root, ext)
         elif ext == ".swift":
@@ -597,10 +720,23 @@ def main():
         audit.project_checks()
     else:
         audit.run()
-    if a.json:
-        print(json.dumps(audit.as_json(), indent=2))
+    result = audit.as_json()
+    if a.save:
+        with open(a.save, "w", encoding="utf-8") as f:
+            json.dump(result, f, indent=2)
+    if a.compare:
+        try:
+            with open(a.compare, encoding="utf-8") as f:
+                before = json.load(f)
+        except (OSError, ValueError) as e:
+            p.error("can't read %s: %s" % (a.compare, e))
+        print_compare(before, result)
+    elif a.json:
+        print(json.dumps(result, indent=2))
     else:
         audit.print_text(not a.no_tokens)
+    if a.save:
+        print("Saved results to %s" % a.save)
     bad = any(hits and RULES[r][0] in ("Blocker", "Major") for r, hits in audit.findings.items())
     return 1 if bad else 0
 
